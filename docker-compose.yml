@@ -1,0 +1,85 @@
+services:
+    laravel.test:
+        image: php:8.2-fpm
+        container_name: laravel_app
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
+        ports:
+            - "80:80"
+        environment:
+            WWWUSER: 1000
+            LARAVEL_SAIL: 1
+        volumes:
+            - .:/var/www/html
+        networks:
+            - sail
+        depends_on:
+            - mysql
+            - redis
+            - elasticsearch
+        command: ["sh", "-c", "apt-get update && apt-get install -y git curl unzip libpng-dev libonig-dev libxml2-dev zip libzip-dev && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip && curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer && composer install --ignore-platform-reqs && php artisan serve --host=0.0.0.0 --port=80"]
+
+    mysql:
+        image: mariadb:10.6
+        container_name: laravel_mysql
+        environment:
+            MYSQL_ROOT_PASSWORD: password
+            MYSQL_DATABASE: sail
+            MYSQL_USER: sail
+            MYSQL_PASSWORD: password
+        ports:
+            - "3306:3306"
+        volumes:
+            - sail-mysql:/var/lib/mysql
+        networks:
+            - sail
+        healthcheck:
+            test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+            retries: 3
+            timeout: 5s
+
+    redis:
+        image: redis:alpine
+        container_name: laravel_redis
+        ports:
+            - "6379:6379"
+        networks:
+            - sail
+
+    elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+        container_name: laravel_elastic
+        environment:
+            - discovery.type=single-node
+            - xpack.security.enabled=false
+            - xpack.security.enrollment.enabled=false
+            - ES_JAVA_OPTS=-Xms256m -Xmx256m
+            - cluster.routing.allocation.disk.threshold_enabled=false
+        ulimits:
+            memlock:
+                soft: -1
+                hard: -1
+            nofile:
+                soft: 65536
+                hard: 65536
+        ports:
+            - "9200:9200"
+        volumes:
+            - sail-es:/usr/share/elasticsearch/data
+        networks:
+            - sail
+        healthcheck:
+            test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -vq '\"status\":\"red\"'"]
+            interval: 30s
+            timeout: 10s
+            retries: 5
+
+networks:
+    sail:
+        driver: bridge
+
+volumes:
+    sail-mysql:
+        driver: local
+    sail-es:
+        driver: local
